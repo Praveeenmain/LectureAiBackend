@@ -68,8 +68,15 @@ app.post('/upload-audio', upload.single('audio'), async (req, res) => {
       transcription: transcription
     });
   } catch (error) {
-    console.error('Error uploading or transcribing audio file:', error);
-    res.status(500).send({ message: 'Error uploading or transcribing audio file.', error: error.message });
+    if (axios.isAxiosError(error)) {
+      // Handle AxiosError
+      console.error('Axios error:', error.response ? error.response.data : error.message);
+      res.status(500).send({ message: 'Error making HTTP request.', error: error.message });
+    } else {
+      // Handle other errors
+      console.error('Error uploading or transcribing audio file:', error);
+      res.status(500).send({ message: 'Error uploading or transcribing audio file.', error: error.message });
+    }
   }
 });
 
