@@ -18,7 +18,7 @@ let db;
 connectToDb((err) => {
   if (err) {
     console.error('Error connecting to database:', err);
-    return;
+    process.exit(1); // Exit the process if unable to connect to the database
   }
   db = getDb();
   app.listen(3002, () => {
@@ -27,72 +27,58 @@ connectToDb((err) => {
 });
 
 app.post('/upload-audio', upload.single('audio'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).send('No file uploaded.');
-  }
-
-  const audioData = {
-    filename: req.file.originalname,
-    contentType: req.file.mimetype,
-    data: req.file.buffer,
-    uploadDate: new Date()
-  };
-
   try {
+    if (!req.file) {
+      return res.status(400).send('No file uploaded.');
+    }
+
+    const audioData = {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      data: req.file.buffer,
+      uploadDate: new Date()
+    };
+
+    // Insert the audio data into the database
     const result = await db.collection('Audio').insertOne(audioData);
-    res.status(201).send({ message: 'Audio file uploaded successfully.', id: result.insertedId });
-  } catch (error) {
-    res.status(500).send({ message: 'Error uploading audio file.', error: error.message });
-  }
-});
+    
+    // Make a request to Whisper.ai Speech-to-Text API
+    const whisperApiKey = process.env.WHISPER_API_KEY; 
+    if (!whisperApiKey) {
+      throw new Error('WHISPER_API_KEY not found in environment variables.');
+    }
+    const whisperUrl = 'https://api.whisper.ai/speech-to-text';
 
-app.post('/process-audio-gpt', async (req, res) => {
-  try {
-    const audioData = req.body.audioData;
-    const contentType = req.body.contentType;
-
-    // Extract transcript from audio data (you might need to use a library for this)
-    const transcript = extractTranscript(audioData, contentType);
-
-    const gpt40Response = await axios.post('https://api.openai.com/v1/gpt-4o', {
-      prompt: `Lecture transcript: ${transcript}`
-    }, {
+    const config = {
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` // Access API key from environment variable
+        'Content-Type': req.file.mimetype, // Use the uploaded file's content type
+        'x-api-key': whisperApiKey
       }
-    });
+    };
 
-    res.status(200).send(gpt40Response.data);
+    const response = await axios.post(whisperUrl, req.file.buffer, config);
+
+    // Get transcription from the response
+    const transcription = response.data.transcription;
+
+    // Send back the transcription along with audio file ID
+    res.status(200).send({ 
+      message: 'Audio file uploaded and transcribed successfully.',
+      audioId: result.insertedId,
+      transcription: transcription
+    });
   } catch (error) {
-    res.status(500).send({ message: 'Error processing audio with GPT-4o.', error: error.message });
+    console.error('Error uploading or transcribing audio file:', error);
+    res.status(500).send({ message: 'Error uploading or transcribing audio file.', error: error.message });
   }
 });
-
-
-app.post('/generate-images-dalle', async (req, res) => {
-  try {
-    const transcript = req.body.transcript;
-
-    const dalleResponse = await axios.post('https://api.openai.com/v1/dalle', {
-      prompt: `Create images for: ${transcript}`
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` // Access API key from environment variable
-      }
-    });
-
-    res.status(200).send(dalleResponse.data);
-  } catch (error) {
-    res.status(500).send({ message: 'Error generating images with DALL-E.', error: error.message });
-  }
-});
-
 
 app.get('/audio-files', async (req, res) => {
   try {
     const audioFiles = await db.collection('Audio').find().toArray();
     res.status(200).send(audioFiles);
   } catch (error) {
+    console.error('Error fetching audio files:', error);
     res.status(500).send({ message: 'Error fetching audio files.', error: error.message });
   }
 });
@@ -109,6 +95,7 @@ app.get('/audio-files/:id', async (req, res) => {
 
     res.status(200).send(audioFile);
   } catch (error) {
+    console.error('Error fetching audio file:', error);
     res.status(500).send({ message: 'Error fetching audio file.', error: error.message });
   }
 });
