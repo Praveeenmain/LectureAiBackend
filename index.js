@@ -48,7 +48,11 @@ app.post('/upload-audio', upload.single('audio'), async (req, res) => {
 
 app.post('/process-audio-gpt', async (req, res) => {
   try {
-    const transcript = req.body.transcript;
+    const audioData = req.body.audioData;
+    const contentType = req.body.contentType;
+
+    // Extract transcript from audio data (you might need to use a library for this)
+    const transcript = extractTranscript(audioData, contentType);
 
     const gpt40Response = await axios.post('https://api.openai.com/v1/gpt-4o', {
       prompt: `Lecture transcript: ${transcript}`
@@ -63,6 +67,7 @@ app.post('/process-audio-gpt', async (req, res) => {
     res.status(500).send({ message: 'Error processing audio with GPT-4o.', error: error.message });
   }
 });
+
 
 app.post('/generate-images-dalle', async (req, res) => {
   try {
@@ -81,6 +86,7 @@ app.post('/generate-images-dalle', async (req, res) => {
     res.status(500).send({ message: 'Error generating images with DALL-E.', error: error.message });
   }
 });
+
 
 app.get('/audio-files', async (req, res) => {
   try {
