@@ -1,10 +1,12 @@
 const express = require("express");
 const axios = require("axios");
+const cors = require('cors');
 const multer = require("multer");
 const { connectToDb, getDb } = require('./db');
 const { ObjectId } = require("mongodb");
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
