@@ -1,5 +1,3 @@
-// server.js (Express.js)
-
 const express = require("express");
 const axios = require("axios");
 const multer = require("multer");
@@ -10,7 +8,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Set up multer storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
@@ -55,7 +52,7 @@ app.post('/process-audio-gpt', async (req, res) => {
       prompt: `Lecture transcript: ${transcript}`
     }, {
       headers: {
-        'Authorization': 'sk-proj-k8eih4I0KIkl2HtDRnsaT3BlbkFJkIgERkXq2SqoAyFADnyM'
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` // Access API key from environment variable
       }
     });
 
@@ -73,7 +70,7 @@ app.post('/generate-images-dalle', async (req, res) => {
       prompt: `Create images for: ${transcript}`
     }, {
       headers: {
-        'Authorization': 'sk-proj-k8eih4I0KIkl2HtDRnsaT3BlbkFJkIgERkXq2SqoAyFADnyM'
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` // Access API key from environment variable
       }
     });
 
@@ -92,7 +89,6 @@ app.get('/audio-files', async (req, res) => {
   }
 });
 
-// Define a route to get a specific audio file by ID
 app.get('/audio-files/:id', async (req, res) => {
   try {
     const audioId = req.params.id;
