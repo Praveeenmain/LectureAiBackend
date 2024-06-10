@@ -18,10 +18,10 @@ app.use(express.urlencoded({ extended: true }));
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // Set the destination directory for uploaded files
+    cb(null, 'uploads/'); 
   },
   filename: function (req, file, cb) {
-    cb(null, file.originalname); // Use the original filename for the uploaded file
+    cb(null, file.originalname); 
   }
 });
 
@@ -34,7 +34,7 @@ const upload = multer({ storage });
 
 let db;
 
-// Load your API key from environment variables or a config file
+
  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -48,7 +48,7 @@ const audioFun = async (audioBuffer) => {
     return transcription.text;
   } catch (error) {
     console.error("Error transcribing audio:", error);
-    throw error; // Rethrow the error to handle it in the route handler
+    throw error; 
   }
 };
 
@@ -61,7 +61,7 @@ const chatGPTFun = async (text) => {
     return response.choices[0].message.content;
   } catch (error) {
     console.error("Error generating chat response:", error);
-    throw error; // Rethrow the error to handle it in the route handler
+    throw error; 
   }
 };
  
@@ -80,7 +80,7 @@ const dalleAi = async (text) => {
     return response.data[0].url;
   } catch (error) {
     console.error("Error generating image with DALL-E:", error);
-    throw error; // Rethrow the error to handle it in the route handler
+    throw error; 
   }
 };
 
@@ -90,7 +90,7 @@ connectToDb((err) => {
     process.exit(1);
   }
   db = getDb();
-  app.listen(3001, () => {
+  app.listen(3002, () => {
     console.log(`App is listening on port 3001`);
   });
 });
@@ -110,27 +110,35 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
 
     const chatResponse = await chatGPTFun(transcriptionText);
 
-    const imageurl=await dalleAi(transcriptionText)
-   
-    const audioCollection = db.collection('Audio');
-    const result = await audioCollection.insertOne({
+    const imageurl = await dalleAi(transcriptionText);
+
+ 
+    const audioBuffer = fs.readFileSync(req.file.path);
+
+  
+    const result = await db.collection('Audio').insertOne({
       transcription: transcriptionText,
       chatResponse: chatResponse,
       image: imageurl,
-     
+      audio: audioBuffer
     });
 
     console.log('Inserted document ID:', result.insertedId);
 
-    res.status(200).json({ transcription: transcriptionText, chatResponse: chatResponse,image:imageurl });
+    
+    fs.unlinkSync(req.file.path);
+
+    res.status(200).json({
+      transcription: transcriptionText,
+      chatResponse: chatResponse,
+      image: imageurl
+    });
 
   } catch (error) {
     console.error('Error processing request:', error);
     res.status(500).send('Error processing request.');
   }
 });
-
- 
 
 app.get('/audios', async (req, res) => {
   try {
