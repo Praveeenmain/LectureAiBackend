@@ -5,88 +5,141 @@ const multer = require("multer");
 const { connectToDb, getDb } = require('./db');
 const { ObjectId } = require("mongodb");
 
+
+
+const OpenAI = require("openai");
+
+const fs = require("fs");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // Set the destination directory for uploaded files
+  },
+  filename: function (req, file, cb) {
+    cb(null, file.originalname); // Use the original filename for the uploaded file
+  }
+});
+
+
+
+
+
+
 const upload = multer({ storage });
 
 let db;
 
+// Load your API key from environment variables or a config file
+ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+const audioFun = async (audioBuffer) => {
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioBuffer,
+      model: "whisper-1"
+    });
+    return transcription.text;
+  } catch (error) {
+    console.error("Error transcribing audio:", error);
+    throw error; // Rethrow the error to handle it in the route handler
+  }
+};
+
+const chatGPTFun = async (text) => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: text }]
+    });
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error("Error generating chat response:", error);
+    throw error; // Rethrow the error to handle it in the route handler
+  }
+};
+ 
+
+const dalleAi = async (text) => {
+  const imageSize="1024x1024"
+  const numberofimages=1
+  try {
+    const response = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: text,
+      size: imageSize,
+      n:numberofimages
+    });
+    console.log("Generated image URL:",response);
+    return response.data[0].url;
+  } catch (error) {
+    console.error("Error generating image with DALL-E:", error);
+    throw error; // Rethrow the error to handle it in the route handler
+  }
+};
+
 connectToDb((err) => {
   if (err) {
     console.error('Error connecting to database:', err);
-    process.exit(1); // Exit the process if unable to connect to the database
+    process.exit(1);
   }
   db = getDb();
-  app.listen(3002, () => {
-    console.log(`App is listening on port 3002`);
+  app.listen(3001, () => {
+    console.log(`App is listening on port 3001`);
   });
 });
 
-app.post('/upload-audio', upload.single('audio'), async (req, res) => {
+app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).send('No file uploaded.');
     }
 
-    const audioData = {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
-      data: req.file.buffer,
-      uploadDate: new Date()
-    };
+    const audioReadStream = fs.createReadStream(req.file.path);
 
-    // Insert the audio data into the database
-    const result = await db.collection('Audio').insertOne(audioData);
-    
-    // Make a request to Whisper.ai Speech-to-Text API
-    const whisperApiKey = process.env.WHISPER_API_KEY; 
-    if (!whisperApiKey) {
-      throw new Error('WHISPER_API_KEY not found in environment variables.');
+    const transcriptionText = await audioFun(audioReadStream);
+    if (!transcriptionText) {
+      return res.status(500).send('Error in transcription.');
     }
-    const whisperUrl = 'https://api.whisper.ai/speech-to-text';
 
-    const config = {
-      headers: {
-        'Content-Type': req.file.mimetype, // Use the uploaded file's content type
-        'x-api-key': whisperApiKey
-      }
-    };
+    const chatResponse = await chatGPTFun(transcriptionText);
 
-    const response = await axios.post(whisperUrl, req.file.buffer, config);
-
-    // Get transcription from the response
-    const transcription = response.data.transcription;
-
-    // Send back the transcription along with audio file ID
-    res.status(200).send({ 
-      message: 'Audio file uploaded and transcribed successfully.',
-      audioId: result.insertedId,
-      transcription: transcription
+    const imageurl=await dalleAi(transcriptionText)
+   
+    const audioCollection = db.collection('Audio');
+    const result = await audioCollection.insertOne({
+      transcription: transcriptionText,
+      chatResponse: chatResponse,
+      image: imageurl,
+     
     });
+
+    console.log('Inserted document ID:', result.insertedId);
+
+    res.status(200).json({ transcription: transcriptionText, chatResponse: chatResponse,image:imageurl });
+
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      // Handle AxiosError
-      console.error('Axios error:', error.response ? error.response.data : error.message);
-      res.status(500).send({ message: 'Error making HTTP request.', error: error.message });
-    } else {
-      // Handle other errors
-      console.error('Error uploading or transcribing audio file:', error);
-      res.status(500).send({ message: 'Error uploading or transcribing audio file.', error: error.message });
-    }
+    console.error('Error processing request:', error);
+    res.status(500).send('Error processing request.');
   }
 });
 
-app.get('/audio-files', async (req, res) => {
+ 
+
+app.get('/audios', async (req, res) => {
   try {
-    const audioFiles = await db.collection('Audio').find().toArray();
-    res.status(200).send(audioFiles);
+    const audioCollection = db.collection('Audio');
+    const audios = await audioCollection.find({}).toArray();
+    res.status(200).json(audios);
   } catch (error) {
-    console.error('Error fetching audio files:', error);
-    res.status(500).send({ message: 'Error fetching audio files.', error: error.message });
+    console.error('Error retrieving audio documents:', error);
+    res.status(500).send('Error retrieving audio documents.');
   }
 });
 
@@ -104,5 +157,22 @@ app.get('/audio-files/:id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching audio file:', error);
     res.status(500).send({ message: 'Error fetching audio file.', error: error.message });
+  }
+});
+
+app.delete('/audio-files/:id', async (req, res) => {
+  try {
+    const audioId = req.params.id;
+
+    const result = await db.collection('Audio').deleteOne({ _id: new ObjectId(audioId) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: 'Audio file not found.' });
+    }
+
+    res.status(200).send({ message: 'Audio file deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting audio file:', error);
+    res.status(500).send({ message: 'Error deleting audio file.', error: error.message });
   }
 });
