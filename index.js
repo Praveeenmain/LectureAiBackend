@@ -114,13 +114,15 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
 
  
     const audioBuffer = fs.readFileSync(req.file.path);
+    const currentDate = new Date();
 
   
     const result = await db.collection('Audio').insertOne({
       transcription: transcriptionText,
       chatResponse: chatResponse,
       image: imageurl,
-      audio: audioBuffer
+      audio: audioBuffer,
+      date: currentDate
     });
 
     console.log('Inserted document ID:', result.insertedId);
@@ -131,7 +133,8 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
     res.status(200).json({
       transcription: transcriptionText,
       chatResponse: chatResponse,
-      image: imageurl
+      image: imageurl,
+      date: currentDate
     });
 
   } catch (error) {
