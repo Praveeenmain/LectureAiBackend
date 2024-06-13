@@ -66,23 +66,7 @@ const chatGPTFun = async (text) => {
 };
  
 
-const dalleAi = async (text) => {
-  const imageSize="1024x1024"
-  const numberofimages=1
-  try {
-    const response = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: text,
-      size: imageSize,
-      n:numberofimages
-    });
-    console.log("Generated image URL:",response);
-    return response.data[0].url;
-  } catch (error) {
-    console.error("Error generating image with DALL-E:", error);
-    throw error; 
-  }
-};
+
 
 connectToDb((err) => {
   if (err) {
@@ -110,7 +94,7 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
 
     const chatResponse = await chatGPTFun(transcriptionText);
 
-    const imageurl = await dalleAi(transcriptionText);
+  
 
  
     const audioBuffer = fs.readFileSync(req.file.path);
@@ -120,7 +104,6 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
     const result = await db.collection('Audio').insertOne({
       transcription: transcriptionText,
       chatResponse: chatResponse,
-      image: imageurl,
       audio: audioBuffer,
       date: currentDate
     });
@@ -133,7 +116,6 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
     res.status(200).json({
       transcription: transcriptionText,
       chatResponse: chatResponse,
-      image: imageurl,
       date: currentDate
     });
 
