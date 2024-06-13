@@ -4,11 +4,7 @@ const cors = require('cors');
 const multer = require("multer");
 const { connectToDb, getDb } = require('./db');
 const { ObjectId } = require("mongodb");
-
-
-
 const OpenAI = require("openai");
-
 const fs = require("fs");
 
 const app = express();
@@ -18,24 +14,18 @@ app.use(express.urlencoded({ extended: true }));
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/'); 
+    cb(null, 'uploads/');
   },
   filename: function (req, file, cb) {
-    cb(null, file.originalname); 
+    cb(null, file.originalname);
   }
 });
-
-
-
-
-
 
 const upload = multer({ storage });
 
 let db;
 
-
- const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
@@ -48,7 +38,7 @@ const audioFun = async (audioBuffer) => {
     return transcription.text;
   } catch (error) {
     console.error("Error transcribing audio:", error);
-    throw error; 
+    throw error;
   }
 };
 
@@ -61,12 +51,32 @@ const chatGPTFun = async (text) => {
     return response.choices[0].message.content;
   } catch (error) {
     console.error("Error generating chat response:", error);
-    throw error; 
+    throw error;
   }
 };
- 
 
-
+// New function to generate a title from the transcription text
+const generateTitle = async (text) => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "Generate a concise and informative title for the following text:"
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ]
+    });
+    return response.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("Error generating title:", error);
+    throw error;
+  }
+};
 
 connectToDb((err) => {
   if (err) {
@@ -75,7 +85,7 @@ connectToDb((err) => {
   }
   db = getDb();
   app.listen(3002, () => {
-    console.log(`App is listening on port 3001`);
+    console.log('App is listening on port 3002');
   });
 });
 
@@ -86,22 +96,19 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
     }
 
     const audioReadStream = fs.createReadStream(req.file.path);
-
     const transcriptionText = await audioFun(audioReadStream);
     if (!transcriptionText) {
       return res.status(500).send('Error in transcription.');
     }
 
     const chatResponse = await chatGPTFun(transcriptionText);
+    const title = await generateTitle(transcriptionText);
 
-  
-
- 
     const audioBuffer = fs.readFileSync(req.file.path);
     const currentDate = new Date();
 
-  
     const result = await db.collection('Audio').insertOne({
+      title: title,
       transcription: transcriptionText,
       chatResponse: chatResponse,
       audio: audioBuffer,
@@ -110,10 +117,10 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
 
     console.log('Inserted document ID:', result.insertedId);
 
-    
     fs.unlinkSync(req.file.path);
 
     res.status(200).json({
+      title: title,
       transcription: transcriptionText,
       chatResponse: chatResponse,
       date: currentDate
@@ -139,7 +146,6 @@ app.get('/audios', async (req, res) => {
 app.get('/audio-files/:id', async (req, res) => {
   try {
     const audioId = req.params.id;
-
     const audioFile = await db.collection('Audio').findOne({ _id: new ObjectId(audioId) });
 
     if (!audioFile) {
@@ -156,7 +162,6 @@ app.get('/audio-files/:id', async (req, res) => {
 app.delete('/audio-files/:id', async (req, res) => {
   try {
     const audioId = req.params.id;
-
     const result = await db.collection('Audio').deleteOne({ _id: new ObjectId(audioId) });
 
     if (result.deletedCount === 0) {
@@ -169,3 +174,5 @@ app.delete('/audio-files/:id', async (req, res) => {
     res.status(500).send({ message: 'Error deleting audio file.', error: error.message });
   }
 });
+
+module.exports = app;
