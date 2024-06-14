@@ -5,7 +5,7 @@ const multer = require("multer");
 const { connectToDb, getDb } = require('./db');
 const { ObjectId } = require("mongodb");
 const OpenAI = require("openai");
-const fs = require("fs");
+const fs = require("fs").promises; // Using fs.promises for async file operations
 
 const app = express();
 app.use(cors());
@@ -31,8 +31,10 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const audioFun = async (audioBuffer) => {
   try {
+    // Read audio file from stream and convert to Buffer
+    const fileBuffer = await fs.readFile(audioBuffer.path);
     const transcription = await openai.audio.transcriptions.create({
-      file: audioBuffer,
+      file: fileBuffer,
       model: "whisper-1"
     });
     return transcription.text;
@@ -55,7 +57,6 @@ const chatGPTFun = async (text) => {
   }
 };
 
-// New function to generate a title from the transcription text
 const generateTitle = async (text) => {
   try {
     const response = await openai.chat.completions.create({
@@ -95,8 +96,7 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
       return res.status(400).send('No file uploaded.');
     }
 
-    const audioReadStream = fs.createReadStream(req.file.path);
-    const transcriptionText = await audioFun(audioReadStream);
+    const transcriptionText = await audioFun(req.file);
     if (!transcriptionText) {
       return res.status(500).send('Error in transcription.');
     }
@@ -104,7 +104,7 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
     const chatResponse = await chatGPTFun(transcriptionText);
     const title = await generateTitle(transcriptionText);
 
-    const audioBuffer = fs.readFileSync(req.file.path);
+    const audioBuffer = await fs.readFile(req.file.path); // Read file as buffer
     const currentDate = new Date();
 
     const result = await db.collection('Audio').insertOne({
@@ -117,7 +117,7 @@ app.post('/upload-transcribe', upload.single('audio'), async (req, res) => {
 
     console.log('Inserted document ID:', result.insertedId);
 
-    fs.unlinkSync(req.file.path);
+    await fs.unlink(req.file.path); // Remove temporary file
 
     res.status(200).json({
       title: title,
@@ -172,6 +172,31 @@ app.delete('/audio-files/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting audio file:', error);
     res.status(500).send({ message: 'Error deleting audio file.', error: error.message });
+  }
+});
+
+app.put('/audio-files/:id', async (req, res) => {
+  try {
+    const audioId = req.params.id;
+    const updateData = req.body;
+
+    if (!ObjectId.isValid(audioId)) {
+      return res.status(400).send({ message: 'Invalid audio file ID.' });
+    }
+
+    const result = await db.collection('Audio').updateOne(
+      { _id: new ObjectId(audioId) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: 'Audio file not found.' });
+    }
+
+    res.status(200).send({ message: 'Audio file updated successfully.' });
+  } catch (error) {
+    console.error('Error updating audio file:', error);
+    res.status(500).send({ message: 'Error updating audio file.', error: error.message });
   }
 });
 
