@@ -33,7 +33,8 @@ const audioFun = async (audioBuffer) => {
   try {
     const transcription = await openai.audio.transcriptions.create({
       file: audioBuffer,
-      model: "whisper-1"
+      model: "whisper-1",
+      target_language: "en"
     });
     return transcription.text;
   } catch (error) {
